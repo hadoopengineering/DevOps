@@ -1,0 +1,69 @@
+#!/bin/bash
+hstname=$1
+
+hostnamectl set-hostname ${hstname}.hadoop.com
+ip=`/sbin/ifconfig | grep inet | head -1 | awk '{print $2}'`
+echo "$ip	${hstname}.hadoop.com	${hstname}" >> /etc/hosts
+systemctl disable firewalld
+sed -i 's/SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
+echo "vm.swappiness = 10" >> /etc/sysctl.conf
+yum  -y  install ntp
+systemctl enable ntpd
+echo "echo never >  /sys/kernel/mm/transparent_hugepage/enabled " >> /etc/rc.local
+echo "echo never > /sys/kernel/mm/transparent_hugepage/defrag" >>  /etc/rc.local
+chmod +x /etc/rc.d/rc.local
+echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf 
+echo "net.ipv6.conf.default.disable_ipv6 = 1"  >> /etc/sysctl.conf
+
+yum -y install wget
+yum -y install telnet
+wget https://archive.cloudera.com/cm7/7.1.4/redhat7/yum/cloudera-manager-trial.repo -O /etc/yum.repos.d/cloudera-manager.repo 
+yum -y install openjdk8
+yum -y install mysql-connector-java
+yum -y install cloudera-manager-daemons
+yum -y install  cloudera-manager-agent
+sed -i 's/server_host=localhost/server_host=master01.hadoop.com/'  /etc/cloudera-scm-agent/config.ini
+systemctl enable cloudera-scm-agent
+systemctl start cloudera-scm-agent
+if [ $hstname == "master01" ] ; then
+	wget http://repo.mysql.com/mysql-community-release-el7-5.noarch.rpm
+	rpm -ivh mysql-community-release-el7-5.noarch.rpm
+	yum -y  install mysql-server
+	systemctl enable  mysqld
+	systemctl start  mysqld
+	yum -y install  expect
+	MYSQL_ROOT_PASSWORD="password"
+	MYSQL=""
+	SECURE_MYSQL=$(expect -c "
+	set timeout 10
+	spawn mysql_secure_installation
+	expect \"Enter current password for root (enter for none):\"
+	send \"$MYSQL\r\"
+	expect \"Change the root password?\"
+	send \"n\r\"
+	expect \"Remove anonymous users?\"
+	send \"y\r\"
+	expect \"Disallow root login remotely?\"
+	send \"y\r\"
+	expect \"Remove test database and access to it?\"
+	send \"y\r\"
+	expect \"Reload privilege tables now?\"
+	send \"y\r\"
+	expect eof
+	")
+
+	echo "$SECURE_MYSQL"
+
+	mysql -u root  <<-EOF
+	grant all on *.* to 'temp'@'%' identified by 'temp' with grant option;
+	EOF
+
+
+	yum -y install cloudera-manager-server
+	/opt/cloudera/cm/schema/scm_prepare_database.sh  mysql  -h master01.hadoop.com  -utemp -ptemp --scm-host master01.hadoop.com scm scm scm
+	systemctl enable cloudera-scm-server
+	systemctl start  cloudera-scm-server
+	#reboot
+fi
+	
+
