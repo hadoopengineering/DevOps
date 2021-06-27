@@ -10,7 +10,7 @@ variable "secret_key" {
 
 variable "vm_names" {
   type    = list(string)
-  default = ["master01"]
+  default = ["master01","master02","worker01","worker02","worker03"]
 }
 variable "region" {
   type    = string
@@ -18,7 +18,7 @@ variable "region" {
 }
 variable "instance_type" {
   type    = string
-  default = "t2.micro"
+  default = "t2.xlarge"
 }
 
 variable "ami" {
